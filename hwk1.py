@@ -8,12 +8,23 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 from scipy.interpolate import RectBivariateSpline ## need this one for de-mosaicing per q1
+from skimage.color import rgb2gray # need this for brightness adjustment/ gamma encoding
+from skimage.io import imsave # NEED this for compression 
+import os #save
+
+
 
 
 
 '''
+############################################################################################################################################
+############################################################################################################################################
+
 RAW IMAGE CONVERSION PYTHON INITIALS
 take numpy2d array of unsigned integers and convert into double precision array
+
+############################################################################################################################################
+############################################################################################################################################
 
 '''
 
@@ -60,6 +71,9 @@ def load_and_analyze_tiff(filename):
 
 
 '''
+############################################################################################################################################
+############################################################################################################################################
+
 LINEARIZATION: 
 -linearize to account for black level/dark noise offset by:
 1. make all values lower than the <black> value --> black.
@@ -68,6 +82,8 @@ LINEARIZATION:
 4. clip values greater than >1 to 1
 5. round up /clip negative values (< 1) to 0.
 
+############################################################################################################################################
+############################################################################################################################################
 
 '''
 
@@ -139,7 +155,7 @@ def plot_linearization_comparison(image_float, black_level, white_level):
     
     return image_linear_actual, image_linear_if_zero_black
 
-# Only run this if you want to compare
+# Only run if wanna compare otwise ignore!!!!!
 # actual, zero_black = plot_linearization_comparison(image_float, black_level, white_level)
 def inspect_array(arr, name="array"):
     """
@@ -168,9 +184,13 @@ def inspect_array(arr, name="array"):
     print(f"Inf values: {np.sum(np.isinf(arr)):,}")
 
 '''
+############################################################################################################################################
+############################################################################################################################################
+
 IDENTIFY CORRECT BAYER PATTERN
 
-
+############################################################################################################################################
+############################################################################################################################################
 
 '''
 def image_from_odd_pixels(image_array):
@@ -254,6 +274,9 @@ def image_from_even_pixels(image_array):
 
 
 '''
+############################################################################################################################################
+############################################################################################################################################
+
 WHITE BALANCING
 For the White Balancing Portion, I used the slides from class lecture and the following sources:
 Reference: https://mattmaulion.medium.com/white-balancing-an-enhancement-technique-in-image-processing-8dd773c69f6
@@ -261,12 +284,10 @@ Reference: https://mattmaulion.medium.com/white-balancing-an-enhancement-techniq
 -White World: searches for the lightest patch to use as a white reference similar to how the human visual system does
 -Grey World: assumes image is grey
 
-
-
+############################################################################################################################################
+############################################################################################################################################
 '''
 
-import numpy as np
-import matplotlib.pyplot as plt
 
 def white_balance_white_world(bayer_image, pattern='rggb'):
     """
@@ -420,15 +441,15 @@ def visualize_balances(original, white_world, gray_world, camera_preset):
 
 
 """
-DEMOSAICING:
+############################################################################################################################################
+############################################################################################################################################
 
+DEMOSAICING: # how do i spell? this looks weird double check spelling
 
+############################################################################################################################################
+############################################################################################################################################
 """
 
-
-import numpy as np
-from scipy.interpolate import RectBivariateSpline
-import matplotlib.pyplot as plt
 
 def demosaic_bilinear(bayer_image, pattern='rggb'):
     """
@@ -550,6 +571,112 @@ def demosaic_bilinear(bayer_image, pattern='rggb'):
 
 
 
+"""
+############################################################################################################################################
+############################################################################################################################################
+
+COLOR SPACE CORRECTION
+
+############################################################################################################################################
+############################################################################################################################################
+"""
+
+
+def color_space_correction(rgb_cam, MXYZ_to_cam, MsRGB_to_XYZ):
+    """
+    Convert camera RGB image to linear sRGB via color space correction.
+
+    Parameters:
+    -----------
+    rgb_cam : numpy array (H x W x 3)
+        Demosaiced RGB image in camera-specific color space (linear values)
+    MXYZ_to_cam : numpy array (3 x 3)
+        Matrix converting XYZ colorspace to camera RGB (from dcraw, reshaped and scaled)
+    MsRGB_to_XYZ : numpy array (3 x 3)
+        Matrix converting linear sRGB to XYZ (fixed standard matrix)
+
+    Returns:
+    --------
+    rgb_sRGB : numpy array (H x W x 3)
+        Linear sRGB color corrected image
+    """
+
+    # Step 1: Compute MsRGB->cam matrix
+    MsRGB_to_cam = MXYZ_to_cam @ MsRGB_to_XYZ
+
+    # Step 2: Normalize matrix rows to sum to 1
+    MsRGB_to_cam_norm = MsRGB_to_cam / MsRGB_to_cam.sum(axis=1, keepdims=True)
+
+    # Step 3: Invert the matrix to get cam->sRGB
+    Mcam_to_sRGB = np.linalg.inv(MsRGB_to_cam_norm)
+
+    # Step 4: Flatten image for matrix multiplication
+    H, W, _ = rgb_cam.shape
+    rgb_cam_flat = rgb_cam.reshape(-1, 3).T  # shape: (3, H*W)
+
+    # Step 5: Apply inverse matrix
+    rgb_sRGB_flat = Mcam_to_sRGB @ rgb_cam_flat  # (3, H*W)
+
+    # Step 6: Reshape back to image shape
+    rgb_sRGB = rgb_sRGB_flat.T.reshape(H, W, 3)
+
+    # Step 7: Clip negative values if any and ensure no overflow beyond 1.0
+    rgb_sRGB = np.clip(rgb_sRGB, 0, 1)
+
+    return rgb_sRGB
+
+
+'''
+############################################################################################################################################
+############################################################################################################################################
+
+Brightness adjustment and gamma encoding
+
+############################################################################################################################################
+############################################################################################################################################
+'''
+
+
+
+# rgb_linear: your input linear RGB image, values typically 0.0 to >1.0
+
+def brightness_adjust_and_gamma_encode(rgb_linear, target_mean=0.25):
+    # Convert RGB to grayscale for luminance measurement
+    gray = rgb2gray(rgb_linear)
+    mean_intensity = np.mean(gray)
+
+    # Compute scale factor
+    scale = target_mean / mean_intensity if mean_intensity > 0 else 1.0
+
+    # Scale image brightness
+    rgb_scaled = rgb_linear * scale
+
+    # Clip values to max 1.0
+    rgb_scaled = np.clip(rgb_scaled, 0, 1)
+
+    # Define sRGB gamma encoding function vectorized
+    def gamma_encode_channel(c):
+        a = 0.055
+        threshold = 0.0031308
+        below_thresh = c <= threshold
+        above_thresh = ~below_thresh
+
+        gc = np.zeros_like(c)
+        gc[below_thresh] = 12.92 * c[below_thresh]
+        gc[above_thresh] = (1 + a) * np.power(c[above_thresh], 1/2.4) - a
+        return gc
+
+    # Apply gamma encoding channel-wise
+    rgb_gamma = np.zeros_like(rgb_scaled)
+    for i in range(3):  # R,G,B channels
+        rgb_gamma[:, :, i] = gamma_encode_channel(rgb_scaled[:, :, i])
+
+    return rgb_gamma
+
+"""
+COMPRESSION
+
+"""
 
 
 
@@ -741,31 +868,17 @@ camera_preset_img, _ = white_balance_camera_presets(image_linear, r_scale, g_sca
 # Visualize
 visualize_balances(image_linear, white_world_img, gray_world_img, camera_preset_img)
 
-# Now wb_results is ready for demosaicing!
-# You can pass these to your demosaicing function:
-# demosaiced_white = demosaic_image(wb_results['white_world'], your_bayer_pattern)
-# demosaiced_gray = demosaic_image(wb_results['gray_world'], your_bayer_pattern)
-# demosaiced_camera = demosaic_image(wb_results['camera_preset'], your_bayer_pattern)
-# Now you can continue with demosaicing, color correction, etc. for each white balanced image
-# For example:
-# demosaiced_gray = demosaic_image(wb_results['gray_world'], bayer_pattern)
-# demosaiced_white = demosaic_image(wb_results['white_world'], bayer_pattern)
-# demosaiced_camera = demosaic_image(wb_results['camera_preset'], bayer_pattern)
 
 
 ###DE-MOSAICING
 
-# bayer_pattern = 'RGGB'  # Your identified Bayer pattern
-
+# bayer_pattern = 'RGGB'  # 
 # Apply demosaicing to all white balanced images
-# Example usage
-# Assume 'image_white_balanced' is your white-balanced linearized Bayer image
-# and 'pattern' is your Bayer pattern (e.g., 'rggb')
+# 
 
 
 print("Now i am starting De-Mosaicing")
-pattern = 'gbrg'  # adjust to match your camera
-
+pattern = 'gbrg'  # checked this and this was the best
 # Apply demosaicing
 rgb_demosaiced = demosaic_bilinear(gray_world_img, pattern=pattern)
 
@@ -789,6 +902,72 @@ plt.show()
 # from PIL import Image
 # rgb_uint8 = (np.clip(rgb_demosaiced, 0, 1) * 255).astype(np.uint8)
 # Image.fromarray(rgb_uint8).save('demosaiced.png')
+
+
+
+#### COLOR SPACE CORRECTION 
+print("Now i am starting COLOR SPACE CORRECTION ")
+
+# ------- Fixed MsRGB->XYZ matrix as per sRGB standard -------
+MsRGB_to_XYZ = np.array([
+    [0.4124564, 0.3575761, 0.1804375],
+    [0.2126729, 0.7151522, 0.0721750],
+    [0.0193339, 0.1191920, 0.9503041]
+])
+
+#  vector values from dcraw --> got this from slack
+dcraw_vector = [
+    24542,-10860,-3401,-1490,11370,-297,2858,-605,3225 
+]
+MXYZ_to_cam = np.array(dcraw_vector).reshape((3, 3)) / 10000.0
+
+
+rgb_sRGB = color_space_correction(rgb_demosaiced, MXYZ_to_cam, MsRGB_to_XYZ)
+
+plt.imshow(rgb_sRGB)
+plt.title("Color Corrected Linear sRGB")
+plt.axis('off')
+plt.show()
+
+
+
+
+### Brightness Adjustment and Gamma Encoding
+
+print("Now i am starting Brightness Adjustment and Gamma Encoding ")
+#rgb_corrected = brightness_adjust_and_gamma_encode(rgb_sRGB, target_mean=0.25)
+for target in [0.1, 0.15, 0.2, 0.25, 0.3, 0.35]:
+    rgb_corrected = brightness_adjust_and_gamma_encode(rgb_sRGB, target_mean=target)
+    
+    plt.figure()
+    plt.imshow(rgb_corrected)
+    plt.title(f'Brightness Adjusted & Gamma Encoded (target mean={target})')
+    plt.axis('off')
+    plt.show()
+
+
+#### Compression
+
+print("Now i am starting Compression Comparison ")
+
+# Assume rgb_img is your final processed image with values in [0, 1]
+
+# Convert to uint8 [0, 255] for saving formats
+rgb_uint8 = (rgb_corrected * 255).astype('uint8')
+
+# Save as PNG (lossless)
+imsave('output_image.png', rgb_uint8)
+
+# Save as JPEG with quality=95 (lossy compression)
+imsave('output_image_quality95.jpg', rgb_uint8, quality=95)
+
+
+
+
+
+
+
+
 
 
 

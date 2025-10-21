@@ -265,344 +265,156 @@ Reference: https://mattmaulion.medium.com/white-balancing-an-enhancement-techniq
 
 '''
 
+import numpy as np
+import matplotlib.pyplot as plt
 
-def identify_bayer_pattern_auto(image_linear):
+def white_balance_white_world(bayer_image, pattern='rggb'):
     """
-    Automatically identify the correct Bayer pattern by testing all four
-    and selecting the one with the most balanced channels
+    White World white balancing: assumes the brightest pixel in each channel should be white.
     """
-    patterns = ['RGGB', 'GRBG', 'BGGR', 'GBRG']
-    pattern_scores = {}
-    
-    print("=== Automatically Identifying Bayer Pattern ===")
-    
-    for pattern in patterns:
-        # Extract channels based on pattern
-        if pattern == 'RGGB':
-            red = image_linear[0::2, 0::2]
-            green1 = image_linear[0::2, 1::2]
-            green2 = image_linear[1::2, 0::2]
-            blue = image_linear[1::2, 1::2]
-        elif pattern == 'GRBG':
-            green1 = image_linear[0::2, 0::2]
-            red = image_linear[0::2, 1::2]
-            blue = image_linear[1::2, 0::2]
-            green2 = image_linear[1::2, 1::2]
-        elif pattern == 'BGGR':
-            blue = image_linear[0::2, 0::2]
-            green1 = image_linear[0::2, 1::2]
-            green2 = image_linear[1::2, 0::2]
-            red = image_linear[1::2, 1::2]
-        elif pattern == 'GBRG':
-            green1 = image_linear[0::2, 0::2]
-            blue = image_linear[0::2, 1::2]
-            red = image_linear[1::2, 0::2]
-            green2 = image_linear[1::2, 1::2]
-        
-        # Calculate statistics
-        red_mean = np.mean(red)
-        green_mean = (np.mean(green1) + np.mean(green2)) / 2
-        blue_mean = np.mean(blue)
-        
-        # Score based on gray world assumption (channels should be balanced)
-        # Lower score is better
-        green_similarity = np.abs(np.mean(green1) - np.mean(green2))  # Green channels should be similar
-        channel_balance = np.std([red_mean, green_mean, blue_mean])   # All channels should be balanced
-        
-        total_score = green_similarity + channel_balance
-        pattern_scores[pattern] = total_score
-        
-        print(f"{pattern}: Green similarity = {green_similarity:.6f}, "
-              f"Channel balance = {channel_balance:.6f}, Total = {total_score:.6f}")
-    
-    # Find the pattern with the best (lowest) score
-    best_pattern = min(pattern_scores, key=pattern_scores.get)
-    print(f"\n🎯 Identified Bayer pattern: {best_pattern}")
-    
-    return best_pattern, pattern_scores
+    # extract Bayer channels based on pattern
+    R, G1, G2, B = extract_bayer_channels(bayer_image, pattern)
 
-def white_balance_bayer(image_linear, bayer_pattern, method, r_scale=None, g_scale=None, b_scale=None):
-    """
-    Apply white balancing to Bayer pattern image
-    """
-    height, width = image_linear.shape
-    
-    # Extract channels based on Bayer pattern
-    if bayer_pattern == 'RGGB':
-        red = image_linear[0::2, 0::2]
-        green1 = image_linear[0::2, 1::2]
-        green2 = image_linear[1::2, 0::2]
-        blue = image_linear[1::2, 1::2]
-    elif bayer_pattern == 'GRBG':
-        green1 = image_linear[0::2, 0::2]
-        red = image_linear[0::2, 1::2]
-        blue = image_linear[1::2, 0::2]
-        green2 = image_linear[1::2, 1::2]
-    elif bayer_pattern == 'BGGR':
-        blue = image_linear[0::2, 0::2]
-        green1 = image_linear[0::2, 1::2]
-        green2 = image_linear[1::2, 0::2]
-        red = image_linear[1::2, 1::2]
-    elif bayer_pattern == 'GBRG':
-        green1 = image_linear[0::2, 0::2]
-        blue = image_linear[0::2, 1::2]
-        red = image_linear[1::2, 0::2]
-        green2 = image_linear[1::2, 1::2]
-    
-    # Combine green channels for statistics
-    green_combined = np.concatenate([green1.flatten(), green2.flatten()])
-    
-    # Calculate scaling factors based on method
-    if method == 'gray_world':
-        red_mean = np.mean(red)
-        green_mean = np.mean(green_combined)
-        blue_mean = np.mean(blue)
-        
-        red_scale = green_mean / red_mean
-        blue_scale = green_mean / blue_mean
-        green_scale = 1.0
-        
-    elif method == 'white_world':
-        red_max = np.max(red)
-        green_max = np.max(green_combined)
-        blue_max = np.max(blue)
-        
-        red_scale = green_max / red_max
-        blue_scale = green_max / blue_max
-        green_scale = 1.0
-        
-    elif method == 'camera_preset':
-        red_scale = r_scale
-        blue_scale = b_scale
-        green_scale = g_scale
-    
-    # Apply white balancing
-    red_balanced = red * red_scale
-    green1_balanced = green1 * green_scale
-    green2_balanced = green2 * green_scale
-    blue_balanced = blue * blue_scale
-    
-    # Reconstruct the white-balanced Bayer image
-    image_wb = np.zeros_like(image_linear)
-    
-    if bayer_pattern == 'RGGB':
-        image_wb[0::2, 0::2] = red_balanced
-        image_wb[0::2, 1::2] = green1_balanced
-        image_wb[1::2, 0::2] = green2_balanced
-        image_wb[1::2, 1::2] = blue_balanced
-    elif bayer_pattern == 'GRBG':
-        image_wb[0::2, 0::2] = green1_balanced
-        image_wb[0::2, 1::2] = red_balanced
-        image_wb[1::2, 0::2] = blue_balanced
-        image_wb[1::2, 1::2] = green2_balanced
-    elif bayer_pattern == 'BGGR':
-        image_wb[0::2, 0::2] = blue_balanced
-        image_wb[0::2, 1::2] = green1_balanced
-        image_wb[1::2, 0::2] = green2_balanced
-        image_wb[1::2, 1::2] = red_balanced
-    elif bayer_pattern == 'GBRG':
-        image_wb[0::2, 0::2] = green1_balanced
-        image_wb[0::2, 1::2] = blue_balanced
-        image_wb[1::2, 0::2] = red_balanced
-        image_wb[1::2, 1::2] = green2_balanced
-    
-    return image_wb, (red_scale, green_scale, blue_scale)
+    # find max values per channel
+    r_max, g_max, b_max = np.max(R), np.max((G1 + G2) / 2), np.max(B)
 
-def auto_white_balance_all_patterns(image_linear, r_scale, g_scale, b_scale):
-    """
-    Automatically identify Bayer pattern and apply all three white balance methods
-    """
-    print("=== Automatic Bayer Pattern White Balancing ===")
-    
-    # Step 1: Automatically identify the Bayer pattern
-    best_pattern, all_scores = identify_bayer_pattern_auto(image_linear)
-    
-    # Step 2: Apply all three white balance methods using the identified pattern
-    print(f"\n=== Applying White Balance Methods with {best_pattern} Pattern ===")
-    
-    wb_white_world, scales_white = white_balance_bayer(image_linear, best_pattern, 'white_world')
-    wb_gray_world, scales_gray = white_balance_bayer(image_linear, best_pattern, 'gray_world')
-    wb_camera, scales_camera = white_balance_bayer(image_linear, best_pattern, 'camera_preset', 
-                                                  r_scale, g_scale, b_scale)
-    
-    # Create wb_results dictionary
-    wb_results = {
-        'white_world': wb_white_world,
-        'gray_world': wb_gray_world,
-        'camera_preset': wb_camera,
-        'scales': {
-            'white_world': scales_white,
-            'gray_world': scales_gray,
-            'camera_preset': scales_camera
-        },
-        'bayer_pattern': best_pattern,
-        'all_pattern_scores': all_scores
-    }
-    
-    print("✓ Automatic white balancing completed!")
-    return wb_results
+    # compute normalization scales
+    r_scale, g_scale, b_scale = 1 / r_max, 1 / g_max, 1 / b_max
 
-def visualize_all_bayer_patterns(image_linear, display_scale=10):
+    # apply scaling individually to each pixel
+    balanced = apply_bayer_scaling(bayer_image, r_scale, g_scale, b_scale, pattern)
+    return balanced, (r_scale, g_scale, b_scale)
+
+
+def white_balance_gray_world(bayer_image, pattern='rggb'):
     """
-    Visualize all four Bayer pattern interpretations for comparison
+    Gray World white balancing: assumes the average color should be gray.
     """
-    patterns = ['RGGB', 'GRBG', 'BGGR', 'GBRG']
-    
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    axes = axes.ravel()
-    
-    for i, pattern in enumerate(patterns):
-        # Extract channels
-        if pattern == 'RGGB':
-            red = image_linear[0::2, 0::2]
-            green1 = image_linear[0::2, 1::2]
-            green2 = image_linear[1::2, 0::2]
-            blue = image_linear[1::2, 1::2]
-        elif pattern == 'GRBG':
-            green1 = image_linear[0::2, 0::2]
-            red = image_linear[0::2, 1::2]
-            blue = image_linear[1::2, 0::2]
-            green2 = image_linear[1::2, 1::2]
-        elif pattern == 'BGGR':
-            blue = image_linear[0::2, 0::2]
-            green1 = image_linear[0::2, 1::2]
-            green2 = image_linear[1::2, 0::2]
-            red = image_linear[1::2, 1::2]
-        elif pattern == 'GBRG':
-            green1 = image_linear[0::2, 0::2]
-            blue = image_linear[0::2, 1::2]
-            red = image_linear[1::2, 0::2]
-            green2 = image_linear[1::2, 1::2]
-        
-        # Create simple RGB visualization (just for pattern inspection)
-        height, width = red.shape
-        rgb_viz = np.zeros((height, width, 3))
-        rgb_viz[:, :, 0] = red * display_scale
-        rgb_viz[:, :, 1] = (green1 + green2) / 2 * display_scale
-        rgb_viz[:, :, 2] = blue * display_scale
-        rgb_viz = np.clip(rgb_viz, 0, 1)
-        
-        axes[i].imshow(rgb_viz)
-        axes[i].set_title(f'Pattern: {pattern}')
-        axes[i].axis('off')
-    
-    plt.suptitle('All Bayer Pattern Interpretations (Scaled for Visibility)', fontsize=14)
+    R, G1, G2, B = extract_bayer_channels(bayer_image, pattern)
+
+    # mean intensity per channel
+    r_mean, g_mean, b_mean = np.mean(R), np.mean((G1 + G2) / 2), np.mean(B)
+    overall_mean = (r_mean + g_mean + b_mean) / 3
+
+    # compute scales to equalize channel averages
+    r_scale = overall_mean / r_mean
+    g_scale = overall_mean / g_mean
+    b_scale = overall_mean / b_mean
+
+    balanced = apply_bayer_scaling(bayer_image, r_scale, g_scale, b_scale, pattern)
+    return balanced, (r_scale, g_scale, b_scale)
+
+
+def white_balance_camera_presets(bayer_image, r_scale, g_scale, b_scale, pattern='rggb'):
+    """
+    White balancing using camera’s dcraw coefficients (r_scale, g_scale, b_scale).
+    """
+    return apply_bayer_scaling(bayer_image, r_scale, g_scale, b_scale, pattern), (r_scale, g_scale, b_scale)
+
+
+
+#needed to be fixed per size
+def extract_bayer_channels(bayer_img, pattern='rggb'):
+    """
+    Extract Bayer pattern channels and ensure all sizes match by cropping if necessary.
+    """
+    if pattern == 'rggb':
+        R = bayer_img[0::2, 0::2]
+        G1 = bayer_img[0::2, 1::2]
+        G2 = bayer_img[1::2, 0::2]
+        B = bayer_img[1::2, 1::2]
+    elif pattern == 'bggr':
+        B = bayer_img[0::2, 0::2]
+        G1 = bayer_img[0::2, 1::2]
+        G2 = bayer_img[1::2, 0::2]
+        R = bayer_img[1::2, 1::2]
+    elif pattern == 'grbg':
+        G1 = bayer_img[0::2, 0::2]
+        R = bayer_img[0::2, 1::2]
+        B = bayer_img[1::2, 0::2]
+        G2 = bayer_img[1::2, 1::2]
+    elif pattern == 'gbrg':
+        G1 = bayer_img[0::2, 0::2]
+        B = bayer_img[0::2, 1::2]
+        R = bayer_img[1::2, 0::2]
+        G2 = bayer_img[1::2, 1::2]
+    else:
+        raise ValueError("Unsupported Bayer pattern.")
+
+    # Crop all to match smallest height and width
+    min_h = min(R.shape[0], G1.shape[0], G2.shape[0], B.shape[0])
+    min_w = min(R.shape[1], G1.shape[1], G2.shape[1], B.shape[1])
+
+    R = R[:min_h, :min_w]
+    G1 = G1[:min_h, :min_w]
+    G2 = G2[:min_h, :min_w]
+    B = B[:min_h, :min_w]
+
+    return R, G1, G2, B
+
+
+
+def apply_bayer_scaling(bayer_img, r_scale, g_scale, b_scale, pattern='rggb'):
+    """
+    Apply the scaling factors to each Bayer pattern position.
+    """
+    balanced = bayer_img.copy()
+
+    if pattern == 'rggb':
+        balanced[0::2, 0::2] *= r_scale
+        balanced[0::2, 1::2] *= g_scale
+        balanced[1::2, 0::2] *= g_scale
+        balanced[1::2, 1::2] *= b_scale
+    elif pattern == 'bggr':
+        balanced[0::2, 0::2] *= b_scale
+        balanced[0::2, 1::2] *= g_scale
+        balanced[1::2, 0::2] *= g_scale
+        balanced[1::2, 1::2] *= r_scale
+    elif pattern == 'grbg':
+        balanced[0::2, 0::2] *= g_scale
+        balanced[0::2, 1::2] *= r_scale
+        balanced[1::2, 0::2] *= b_scale
+        balanced[1::2, 1::2] *= g_scale
+    elif pattern == 'gbrg':
+        balanced[0::2, 0::2] *= g_scale
+        balanced[0::2, 1::2] *= b_scale
+        balanced[1::2, 0::2] *= r_scale
+        balanced[1::2, 1::2] *= g_scale
+
+    return np.clip(balanced, 0, 1)
+
+
+def visualize_balances(original, white_world, gray_world, camera_preset):
+    """
+    Visualize results of three white balance algorithms for comparison.
+    """
+    plt.figure(figsize=(16, 10))
+
+    plt.subplot(2, 2, 1)
+    plt.imshow(original, cmap='gray')
+    plt.title('Original (Linearized Bayer)')
+    plt.axis('off')
+
+    plt.subplot(2, 2, 2)
+    plt.imshow(white_world, cmap='gray')
+    plt.title('White World')
+    plt.axis('off')
+
+    plt.subplot(2, 2, 3)
+    plt.imshow(gray_world, cmap='gray')
+    plt.title('Gray World')
+    plt.axis('off')
+
+    plt.subplot(2, 2, 4)
+    plt.imshow(camera_preset, cmap='gray')
+    plt.title('Camera Preset')
+    plt.axis('off')
+
     plt.tight_layout()
     plt.show()
 
-def visualize_white_balance_results(wb_results, original_image, display_scale=10):
-    """
-    Visualize the white balanced Bayer images
-    """
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    
-    region = (100, 400, 100, 400)  # y1, y2, x1, x2
-    y1, y2, x1, x2 = region
-    
-    # Original
-    axes[0,0].imshow(np.clip(original_image[y1:y2, x1:x2] * display_scale, 0, 1), cmap='gray')
-    axes[0,0].set_title('Original Bayer')
-    axes[0,0].axis('off')
-    
-    # White World
-    axes[0,1].imshow(np.clip(wb_results['white_world'][y1:y2, x1:x2] * display_scale, 0, 1), cmap='gray')
-    axes[0,1].set_title('White World WB')
-    axes[0,1].axis('off')
-    
-    # Gray World
-    axes[1,0].imshow(np.clip(wb_results['gray_world'][y1:y2, x1:x2] * display_scale, 0, 1), cmap='gray')
-    axes[1,0].set_title('Gray World WB')
-    axes[1,0].axis('off')
-    
-    # Camera Preset
-    axes[1,1].imshow(np.clip(wb_results['camera_preset'][y1:y2, x1:x2] * display_scale, 0, 1), cmap='gray')
-    axes[1,1].set_title('Camera Preset WB')
-    axes[1,1].axis('off')
-    
-    plt.suptitle(f'White Balanced Bayer Images (Auto-detected Pattern: {wb_results["bayer_pattern"]})', fontsize=14)
-    plt.tight_layout()
-    plt.show()
 
-def print_white_balance_summary(wb_results):
-    """
-    Print comprehensive white balance results
-    """
-    print("\n" + "="*60)
-    print("WHITE BALANCE SUMMARY")
-    print("="*60)
-    
-    print(f"\nIdentified Bayer Pattern: {wb_results['bayer_pattern']}")
-    
-    print("\nPattern Analysis Scores (lower is better):")
-    for pattern, score in wb_results['all_pattern_scores'].items():
-        marker = " ← BEST" if pattern == wb_results['bayer_pattern'] else ""
-        print(f"  {pattern}: {score:.6f}{marker}")
-    
-    print("\nWhite Balance Scaling Factors:")
-    for method, scales in wb_results['scales'].items():
-        r, g, b = scales
-        print(f"  {method:15}: R = {r:7.4f}, G = {g:7.4f}, B = {b:7.4f}")
-    
-    print(f"\nOutput Image Shapes:")
-    print(f"  Original: {image_linear.shape}")
-    print(f"  White World: {wb_results['white_world'].shape}")
-    print(f"  Gray World: {wb_results['gray_world'].shape}")
-    print(f"  Camera Preset: {wb_results['camera_preset'].shape}")
 
-# Complete automatic pipeline
-def complete_auto_white_balance_pipeline(image_linear, r_scale, g_scale, b_scale):
-    """
-    Complete automatic white balancing pipeline:
-    1. Visualize all Bayer patterns
-    2. Automatically identify correct pattern
-    3. Apply all three white balance methods
-    4. Return wb_results
-    """
-    print("Starting Automatic White Balance Pipeline")
-    print(f"Camera preset multipliers: R={r_scale:.4f}, G={g_scale:.4f}, B={b_scale:.4f}")
-    
-    # Step 1: Show all pattern interpretations
-    print("\nStep 1: Visualizing all Bayer pattern interpretations...")
-    visualize_all_bayer_patterns(image_linear)
-    
-    # Step 2: Automatically identify pattern and apply white balancing
-    print("\nStep 2: Identifying Bayer pattern and applying white balancing...")
-    wb_results = auto_white_balance_all_patterns(image_linear, r_scale, g_scale, b_scale)
-    
-    # Step 3: Visualize results
-    print("\nStep 3: Visualizing white balanced results...")
-    visualize_white_balance_results(wb_results, image_linear)
-    
-    # Step 4: Print summary
-    print_white_balance_summary(wb_results)
-    
-    print("\n✓ Automatic white balance pipeline completed!")
-    print("✓ wb_results is ready for demosaicing!")
-    
-    return wb_results
-
-# Usage - just run this one function:
-def run_automatic_white_balancing():
-    """
-    Run the complete automatic white balancing pipeline
-    """
-    # Your values
-    r_scale = 2.165039
-    g_scale = 1.000000
-    b_scale = 1.643555
-    
-    # Run the complete automatic pipeline
-    wb_results = complete_auto_white_balance_pipeline(
-        image_linear=image_linear,  # Your linearized Bayer image
-        r_scale=r_scale,
-        g_scale=g_scale,
-        b_scale=b_scale
-    )
-    
-    return wb_results
-
-# To use - just call this:
-# wb_results = run_automatic_white_balancing()
 
 
 
@@ -614,176 +426,129 @@ DEMOSAICING:
 """
 
 
-def demosaic_image(image_wb, bayer_pattern):
+import numpy as np
+from scipy.interpolate import RectBivariateSpline
+import matplotlib.pyplot as plt
+
+def demosaic_bilinear(bayer_image, pattern='rggb'):
     """
-    Demosaic a white-balanced Bayer pattern image using bilinear interpolation
+    Demosaic a Bayer pattern image using bilinear interpolation via RectBivariateSpline.
     
     Parameters:
-    - image_wb: White balanced Bayer pattern image (2D array)
-    - bayer_pattern: One of 'RGGB', 'GRBG', 'BGGR', 'GBRG'
+    -----------
+    bayer_image : numpy array (H x W)
+        White-balanced linearized Bayer image
+    pattern : str
+        Bayer pattern: 'rggb', 'bggr', 'grbg', or 'gbrg'
     
     Returns:
-    - Demosaiced RGB image (3D array of shape H x W x 3)
+    --------
+    rgb_image : numpy array (H x W x 3)
+        Full-resolution RGB demosaiced image
     """
-    height, width = image_wb.shape
     
-    # Create coordinate grids for the full image
-    x_full = np.arange(width)
-    y_full = np.arange(height)
+    H, W = bayer_image.shape
     
-    # Create coordinate grids for the subsampled channels
-    x_even = np.arange(0, width, 2)   # Even columns: 0, 2, 4, ...
-    x_odd = np.arange(1, width, 2)    # Odd columns: 1, 3, 5, ...
-    y_even = np.arange(0, height, 2)  # Even rows: 0, 2, 4, ...
-    y_odd = np.arange(1, height, 2)   # Odd rows: 1, 3, 5, ...
+    # Create coordinate grids for the full output image
+    full_x = np.arange(W, dtype=np.float32)
+    full_y = np.arange(H, dtype=np.float32)
     
-    # Initialize RGB channels
-    red_channel = np.zeros((height, width))
-    green_channel = np.zeros((height, width))
-    blue_channel = np.zeros((height, width))
-    
-    # Extract known pixel values based on Bayer pattern
-    if bayer_pattern == 'RGGB':
-        # Red at (even, even)
-        red_known = image_wb[0::2, 0::2]
-        # Green at (even, odd) and (odd, even)
-        green1_known = image_wb[0::2, 1::2]  # Even rows, odd columns
-        green2_known = image_wb[1::2, 0::2]  # Odd rows, even columns
-        # Blue at (odd, odd)
-        blue_known = image_wb[1::2, 1::2]
+    # Extract Bayer subchannels based on pattern
+    if pattern == 'rggb':
+        R_sub = bayer_image[0::2, 0::2]
+        G1_sub = bayer_image[0::2, 1::2]
+        G2_sub = bayer_image[1::2, 0::2]
+        B_sub = bayer_image[1::2, 1::2]
+        r_offset, r_col_offset = 0, 0
+        g1_offset, g1_col_offset = 0, 1
+        g2_offset, g2_col_offset = 1, 0
+        b_offset, b_col_offset = 1, 1
         
-    elif bayer_pattern == 'GRBG':
-        # Red at (even, odd)
-        red_known = image_wb[0::2, 1::2]
-        # Green at (even, even) and (odd, odd)
-        green1_known = image_wb[0::2, 0::2]  # Even rows, even columns
-        green2_known = image_wb[1::2, 1::2]  # Odd rows, odd columns
-        # Blue at (odd, even)
-        blue_known = image_wb[1::2, 0::2]
+    elif pattern == 'bggr':
+        B_sub = bayer_image[0::2, 0::2]
+        G1_sub = bayer_image[0::2, 1::2]
+        G2_sub = bayer_image[1::2, 0::2]
+        R_sub = bayer_image[1::2, 1::2]
+        b_offset, b_col_offset = 0, 0
+        g1_offset, g1_col_offset = 0, 1
+        g2_offset, g2_col_offset = 1, 0
+        r_offset, r_col_offset = 1, 1
         
-    elif bayer_pattern == 'BGGR':
-        # Red at (odd, odd)
-        red_known = image_wb[1::2, 1::2]
-        # Green at (even, odd) and (odd, even)
-        green1_known = image_wb[0::2, 1::2]  # Even rows, odd columns
-        green2_known = image_wb[1::2, 0::2]  # Odd rows, even columns
-        # Blue at (even, even)
-        blue_known = image_wb[0::2, 0::2]
+    elif pattern == 'grbg':
+        G1_sub = bayer_image[0::2, 0::2]
+        R_sub = bayer_image[0::2, 1::2]
+        B_sub = bayer_image[1::2, 0::2]
+        G2_sub = bayer_image[1::2, 1::2]
+        g1_offset, g1_col_offset = 0, 0
+        r_offset, r_col_offset = 0, 1
+        b_offset, b_col_offset = 1, 0
+        g2_offset, g2_col_offset = 1, 1
         
-    elif bayer_pattern == 'GBRG':
-        # Red at (odd, even)
-        red_known = image_wb[1::2, 0::2]
-        # Green at (even, even) and (odd, odd)
-        green1_known = image_wb[0::2, 0::2]  # Even rows, even columns
-        green2_known = image_wb[1::2, 1::2]  # Odd rows, odd columns
-        # Blue at (even, odd)
-        blue_known = image_wb[0::2, 1::2]
+    elif pattern == 'gbrg':
+        G1_sub = bayer_image[0::2, 0::2]
+        B_sub = bayer_image[0::2, 1::2]
+        R_sub = bayer_image[1::2, 0::2]
+        G2_sub = bayer_image[1::2, 1::2]
+        g1_offset, g1_col_offset = 0, 0
+        b_offset, b_col_offset = 0, 1
+        r_offset, r_col_offset = 1, 0
+        g2_offset, g2_col_offset = 1, 1
+    else:
+        raise ValueError("Unsupported Bayer pattern.")
     
-    # Create interpolation functions for each channel
-    # Red channel interpolation
-    spline_red = RectBivariateSpline(y_even, x_even, red_known, kx=1, ky=1)
-    red_channel = spline_red(y_full, x_full)
+    # Function to interpolate one channel
+    def interpolate_channel(channel_sub, row_offset, col_offset):
+        """
+        Interpolate a subsampled color channel to full resolution.
+        
+        Parameters:
+        -----------
+        channel_sub : numpy array
+            Subsampled channel (half resolution in each dimension)
+        row_offset, col_offset : int
+            Starting position (0 or 1) for this channel in the full Bayer grid
+        
+        Returns:
+        --------
+        channel_full : numpy array (H x W)
+            Interpolated full-resolution channel
+        """
+        h, w = channel_sub.shape
+        
+        # Coordinates of known pixels in the original full image
+        # For a subsample with offset, pixels are at positions: offset + 2*index
+        x_sub = col_offset + 2 * np.arange(w, dtype=np.float32)
+        y_sub = row_offset + 2 * np.arange(h, dtype=np.float32)
+        
+        # Create the bilinear spline interpolator
+        # RectBivariateSpline(y_coords, x_coords, z_values)
+        spline = RectBivariateSpline(y_sub, x_sub, channel_sub, kx=1, ky=1)
+        
+        # Evaluate the spline at all full-resolution pixel coordinates
+        # Returns shape (H, W)
+        channel_full = spline(full_y, full_x, grid=True)
+        
+        return channel_full
     
-    # Blue channel interpolation
-    spline_blue = RectBivariateSpline(y_odd, x_odd, blue_known, kx=1, ky=1)
-    blue_channel = spline_blue(y_full, x_full)
+    # Interpolate each channel to full resolution
+    R_full = interpolate_channel(R_sub, r_offset, r_col_offset)
+    G1_full = interpolate_channel(G1_sub, g1_offset, g1_col_offset)
+    G2_full = interpolate_channel(G2_sub, g2_offset, g2_col_offset)
+    B_full = interpolate_channel(B_sub, b_offset, b_col_offset)
     
-    # Green channel interpolation (two separate interpolations then average)
-    spline_green1 = RectBivariateSpline(y_even, x_odd, green1_known, kx=1, ky=1)
-    green1_full = spline_green1(y_full, x_full)
+    # Average the two green channels
+    G_full = (G1_full + G2_full) / 2.0
     
-    spline_green2 = RectBivariateSpline(y_odd, x_even, green2_known, kx=1, ky=1)
-    green2_full = spline_green2(y_full, x_full)
+    # Stack into RGB image (H x W x 3)
+    rgb_image = np.stack((R_full, G_full, B_full), axis=2)
     
-    # Average the two green interpolations
-    green_channel = (green1_full + green2_full) / 2
-    
-    # Stack channels to create RGB image
-    rgb_image = np.stack([red_channel, green_channel, blue_channel], axis=-1)
-    
-    # Clip to ensure valid range
+    # Clip to valid range [0, 1]
     rgb_image = np.clip(rgb_image, 0, 1)
     
     return rgb_image
 
-# Apply demosaicing to all white balanced images
-def demosaic_all_images(wb_results, bayer_pattern):
-    """
-    Apply demosaicing to all white balanced images
-    """
-    print("=== Applying Demosaicing ===")
-    
-    demosaiced_images = {}
-    
-    for method, image_wb in wb_results.items():
-        if method == 'scales':  # Skip the scales dictionary
-            continue
-            
-        print(f"Demosaicing {method} white balanced image...")
-        rgb_image = demosaic_image(image_wb, bayer_pattern)
-        demosaiced_images[method] = rgb_image
-        
-        print(f"  Input shape: {image_wb.shape}")
-        print(f"  Output shape: {rgb_image.shape}")
-    
-    return demosaiced_images
 
-# Visualize demosaiced results
-def visualize_demosaiced_results(demosaiced_images):
-    """
-    Visualize the demosaiced RGB images
-    """
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    
-    # Display settings
-    display_region = (100, 400, 100, 400)  # Show a 300x300 region
-    y1, y2, x1, x2 = display_region
-    
-    methods = ['gray_world', 'white_world', 'camera_preset']
-    titles = ['Gray World', 'White World', 'Camera Preset']
-    
-    for i, (method, title) in enumerate(zip(methods, titles)):
-        ax = axes[i//2, i%2]
-        rgb_region = demosaiced_images[method][y1:y2, x1:x2]
-        
-        # Scale for display (linear images are dark)
-        display_image = np.clip(rgb_region * 5, 0, 1)
-        
-        ax.imshow(display_image)
-        ax.set_title(f'{title} Demosaiced')
-        ax.axis('off')
-    
-    # Hide the empty subplot
-    axes[1, 1].axis('off')
-    
-    plt.suptitle('Demosaiced RGB Images (Scaled for Visibility)', fontsize=14)
-    plt.tight_layout()
-    plt.show()
 
-# Complete demosaicing pipeline
-def complete_demosaicing_pipeline(wb_results, bayer_pattern):
-    """
-    Complete demosaicing for all white balance methods
-    """
-    print("Starting Demosaicing Pipeline")
-    print(f"Bayer Pattern: {bayer_pattern}")
-    
-    # Apply demosaicing to all white balanced images
-    demosaiced_images = demosaic_all_images(wb_results, bayer_pattern)
-    
-    # Visualize results
-    visualize_demosaiced_results(demosaiced_images)
-    
-    # Print image statistics
-    print("\n=== Demosaiced Image Statistics ===")
-    for method, rgb_image in demosaiced_images.items():
-        print(f"{method:15}:")
-        print(f"  Shape: {rgb_image.shape}")
-        print(f"  Red range:   [{np.min(rgb_image[:,:,0]):.4f}, {np.max(rgb_image[:,:,0]):.4f}]")
-        print(f"  Green range: [{np.min(rgb_image[:,:,1]):.4f}, {np.max(rgb_image[:,:,1]):.4f}]")
-        print(f"  Blue range:  [{np.min(rgb_image[:,:,2]):.4f}, {np.max(rgb_image[:,:,2]):.4f}]")
-    
-    return demosaiced_images
 
 
 
@@ -952,16 +717,35 @@ plt.show()
 # - rgb_image: your demosaiced RGB image (H x W x 3)
 # - r_scale, g_scale, b_scale: values from dcraw reconnaissance
 
+
+print("Now i am starting White-Balancing")
+
 # from reconnaissance run value of dCRAW
 r_scale = 2.165039  # 
 g_scale = 1.000000  # 
 b_scale = 1.643555  # 
 
+# Example usage ---------------------------------------------------------
+# Assume 'image_linear' is your 2D numpy array (linearized Bayer image) normalized [0,1]
+# and 'r_scale', 'g_scale', 'b_scale' come from dcraw reconnaissance run.
 
-# Apply WB then compare all three methods
+
+
+pattern = 'gbrg'  # adjust to match your Bayer pattern
+
 # Apply white balancing
-wb_results = complete_white_balance_analysis(image_linear, bayer_pattern, r_scale, g_scale, b_scale)
+white_world_img, _ = white_balance_white_world(image_linear, pattern)
+gray_world_img, _ = white_balance_gray_world(image_linear, pattern)
+camera_preset_img, _ = white_balance_camera_presets(image_linear, r_scale, g_scale, b_scale, pattern)
 
+# Visualize
+visualize_balances(image_linear, white_world_img, gray_world_img, camera_preset_img)
+
+# Now wb_results is ready for demosaicing!
+# You can pass these to your demosaicing function:
+# demosaiced_white = demosaic_image(wb_results['white_world'], your_bayer_pattern)
+# demosaiced_gray = demosaic_image(wb_results['gray_world'], your_bayer_pattern)
+# demosaiced_camera = demosaic_image(wb_results['camera_preset'], your_bayer_pattern)
 # Now you can continue with demosaicing, color correction, etc. for each white balanced image
 # For example:
 # demosaiced_gray = demosaic_image(wb_results['gray_world'], bayer_pattern)
@@ -974,8 +758,37 @@ wb_results = complete_white_balance_analysis(image_linear, bayer_pattern, r_scal
 # bayer_pattern = 'RGGB'  # Your identified Bayer pattern
 
 # Apply demosaicing to all white balanced images
-demosaiced_images = complete_demosaicing_pipeline(wb_results, bayer_pattern)
+# Example usage
+# Assume 'image_white_balanced' is your white-balanced linearized Bayer image
+# and 'pattern' is your Bayer pattern (e.g., 'rggb')
 
+
+print("Now i am starting De-Mosaicing")
+pattern = 'gbrg'  # adjust to match your camera
+
+# Apply demosaicing
+rgb_demosaiced = demosaic_bilinear(gray_world_img, pattern=pattern)
+
+# Visualize
+plt.figure(figsize=(12, 6))
+
+plt.subplot(1, 2, 1)
+plt.imshow(gray_world_img, cmap='gray')
+plt.title('White Balanced Bayer (Before Demosaicing)')
+plt.axis('off')
+
+plt.subplot(1, 2, 2)
+plt.imshow(rgb_demosaiced)
+plt.title('Demosaiced RGB Image')
+plt.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+# Optional: save the result
+# from PIL import Image
+# rgb_uint8 = (np.clip(rgb_demosaiced, 0, 1) * 255).astype(np.uint8)
+# Image.fromarray(rgb_uint8).save('demosaiced.png')
 
 
 

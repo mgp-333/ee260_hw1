@@ -639,36 +639,36 @@ Brightness adjustment and gamma encoding
 
 
 # rgb_linear: your input linear RGB image, values typically 0.0 to >1.0
+import numpy as np
+from skimage.color import rgb2gray
 
-def brightness_adjust_and_gamma_encode(rgb_linear, target_mean=0.25):
-    # Convert RGB to grayscale for luminance measurement
+def brightness_adjust_and_gamma_encode(rgb_linear, target_mean=0.5):
+    # Normalize if input is not in [0,1]
+    if rgb_linear.max() > 1:
+        rgb_linear = rgb_linear / rgb_linear.max()
+
     gray = rgb2gray(rgb_linear)
     mean_intensity = np.mean(gray)
+    if mean_intensity == 0:
+        scale = 1.0
+    else:
+        scale = target_mean / mean_intensity
 
-    # Compute scale factor
-    scale = target_mean / mean_intensity if mean_intensity > 0 else 1.0
-
-    # Scale image brightness
     rgb_scaled = rgb_linear * scale
-
-    # Clip values to max 1.0
     rgb_scaled = np.clip(rgb_scaled, 0, 1)
 
-    # Define sRGB gamma encoding function vectorized
     def gamma_encode_channel(c):
         a = 0.055
         threshold = 0.0031308
-        below_thresh = c <= threshold
-        above_thresh = ~below_thresh
-
+        below = c <= threshold
+        above = ~below
         gc = np.zeros_like(c)
-        gc[below_thresh] = 12.92 * c[below_thresh]
-        gc[above_thresh] = (1 + a) * np.power(c[above_thresh], 1/2.4) - a
+        gc[below] = 12.92 * c[below]
+        gc[above] = (1 + a) * np.power(c[above], 1/2.4) - a
         return gc
 
-    # Apply gamma encoding channel-wise
     rgb_gamma = np.zeros_like(rgb_scaled)
-    for i in range(3):  # R,G,B channels
+    for i in range(3):
         rgb_gamma[:, :, i] = gamma_encode_channel(rgb_scaled[:, :, i])
 
     return rgb_gamma
@@ -936,7 +936,7 @@ plt.show()
 
 print("Now i am starting Brightness Adjustment and Gamma Encoding ")
 #rgb_corrected = brightness_adjust_and_gamma_encode(rgb_sRGB, target_mean=0.25)
-for target in [0.1, 0.15, 0.2, 0.25, 0.3, 0.35]:
+for target in [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, .5]:
     rgb_corrected = brightness_adjust_and_gamma_encode(rgb_sRGB, target_mean=target)
     
     plt.figure()

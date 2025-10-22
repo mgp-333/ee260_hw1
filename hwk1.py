@@ -936,7 +936,7 @@ plt.show()
 
 print("Now i am starting Brightness Adjustment and Gamma Encoding ")
 #rgb_corrected = brightness_adjust_and_gamma_encode(rgb_sRGB, target_mean=0.25)
-for target in [0.15, 0.25, 0.35, 0.5, 0.8]:
+for target in [0.15, 0.35, 0.5, 0.9]:
     rgb_corrected = brightness_adjust_and_gamma_encode(rgb_sRGB, target_mean=target)
     
     plt.figure()
@@ -961,18 +961,43 @@ print("Now i am starting Compression Comparison ")
 # Convert to uint8 [0, 255] for saving formats
 rgb_uint8 = (rgb_corrected * 255).astype('uint8')
 
-# Save as PNG (lossless)
+# Save as PNG (no compression)
 imsave('output_image.png', rgb_uint8)
-
-# Save as JPEG with quality=95 (lossy compression)
+# Save as JPEG with quality=95 (compression)
 imsave('output_image_quality95.jpg', rgb_uint8, quality=95)
 
+png_size = os.path.getsize('output_image.png')
+jpeg_size = os.path.getsize('output_image_quality95.jpg')
+
+compression_ratio = png_size / jpeg_size
+
+print(f"PNG file size: {png_size} bytes")
+print(f"JPEG file size (quality=95): {jpeg_size} bytes")
+print(f"Compression ratio (PNG/JPEG): {compression_ratio:.2f}")
 
 
 
+import matplotlib.pyplot as plt
+
+qualities = range(95, 4, -5)  # from 95 down to 5 stepping -5
+
+for q in qualities:
+    filename = f'output_image_quality{q}.jpg'
+    imsave(filename, rgb_uint8, quality=q)
+    print(f"Saved {filename}")
+    # Manually open and visually inspect this and the PNG to compare quality
+
+# After visual inspection, select the lowest quality without noticeable degradation
+selected_quality = 85  # for example, based on your evaluation
+selected_jpeg_size = os.path.getsize(f'output_image_quality{selected_quality}.jpg')
+selected_compression_ratio = png_size / selected_jpeg_size
+
+print(f"Selected JPEG quality: {selected_quality}")
+print(f"JPEG file size at selected quality: {selected_jpeg_size} bytes")
+print(f"Compression ratio at selected quality: {selected_compression_ratio:.2f}")
 
 
-
+####
 
 
 

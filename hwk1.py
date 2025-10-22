@@ -936,14 +936,20 @@ plt.show()
 
 print("Now i am starting Brightness Adjustment and Gamma Encoding ")
 #rgb_corrected = brightness_adjust_and_gamma_encode(rgb_sRGB, target_mean=0.25)
-for target in [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, .5]:
+for target in [0.15, 0.25, 0.35, 0.5, 0.8]:
     rgb_corrected = brightness_adjust_and_gamma_encode(rgb_sRGB, target_mean=target)
     
     plt.figure()
     plt.imshow(rgb_corrected)
     plt.title(f'Brightness Adjusted & Gamma Encoded (target mean={target})')
     plt.axis('off')
-    plt.show()
+    
+    # Save each image with a descriptive filename
+    filename = f'bright_gamma_target_{target:.2f}.png'
+    plt.savefig(filename, bbox_inches='tight', dpi=300)
+    print(f'Saved {filename}')
+    
+    plt.close()  # Closes figure to free memory
 
 
 #### Compression

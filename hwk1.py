@@ -639,8 +639,7 @@ Brightness adjustment and gamma encoding
 
 
 # rgb_linear: your input linear RGB image, values typically 0.0 to >1.0
-import numpy as np
-from skimage.color import rgb2gray
+
 
 def brightness_adjust_and_gamma_encode(rgb_linear, target_mean=0.5):
     # Normalize if input is not in [0,1]
@@ -976,8 +975,8 @@ print(f"JPEG file size (quality=95): {jpeg_size} bytes")
 print(f"Compression ratio (PNG/JPEG): {compression_ratio:.2f}")
 
 
-
-import matplotlib.pyplot as plt
+##manual white balancing
+##
 
 qualities = range(95, 4, -5)  # from 95 down to 5 stepping -5
 
@@ -997,10 +996,70 @@ print(f"JPEG file size at selected quality: {selected_jpeg_size} bytes")
 print(f"Compression ratio at selected quality: {selected_compression_ratio:.2f}")
 
 
-####
+#### Manual White Balancing 
+#how do i know what to expect to be white?
+#1 select a piece from image 
+#2 normalize to make RGB channels in patch equal
+#3try different pieces
+#4
+
+# Display image to select region
+plt.imshow(rgb_corrected)
+plt.title('Select corners of white patch (4 points)')
+plt.axis('off')
+
+# Select patch corners
+points = np.array(plt.ginput(4, timeout=0)).astype(int)
+plt.close()
+
+# Ensure 4 points were selected
+if points.shape != (4, 2):
+    raise ValueError("You need to select exactly 4 points.")
+
+# Compute bounding box
+x_min, y_min = np.min(points[:, 0]), np.min(points[:, 1])
+x_max, y_max = np.max(points[:, 0]), np.max(points[:, 1])
+
+# Crop patch region
+patch = rgb_corrected[y_min:y_max, x_min:x_max, :]
+
+# Compute RGB means of patch
+r_mean = np.mean(patch[:, :, 0])
+g_mean = np.mean(patch[:, :, 1])
+b_mean = np.mean(patch[:, :, 2])
+
+# Compute white balance weights relative to green
+r_weight = g_mean / r_mean if r_mean > 0 else 1.0
+b_weight = g_mean / b_mean if b_mean > 0 else 1.0
+g_weight = 1.0
+
+# Apply weights to whole image
+wb_image = rgb_corrected.copy()
+wb_image[:, :, 0] *= r_weight
+wb_image[:, :, 1] *= g_weight
+wb_image[:, :, 2] *= b_weight
+wb_image = np.clip(wb_image, 0, 1)
+
+# Show results
+plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.imshow(rgb_corrected)
+plt.title('Original Image')
+plt.axis('off')
+
+plt.subplot(1, 2, 2)
+plt.imshow(wb_image)
+plt.title('Manual White Balanced Image')
+plt.axis('off')
+plt.tight_layout()
+plt.show()
 
 
 
+
+
+
+### Learn to use DCRAW
 
 
 '''
